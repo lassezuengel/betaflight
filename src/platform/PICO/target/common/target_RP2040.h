@@ -81,9 +81,9 @@
 #undef USE_TELEMETRY_SMARTPORT
 #undef USE_TELEMETRY_SRXL
 
-#undef USE_SERIAL_4WAY_BLHELI_INTERFACE
-#undef USE_SERIAL_4WAY_BLHELI_BOOTLOADER
-#undef USE_SERIAL_4WAY_SK_BOOTLOADER
+// The generic 4-way implementation bit-bangs the motor GPIOs and does not
+// depend on an STM32 timer peripheral.  Keep both bootloader transports so
+// BLHeli/AM32 configurators can use MSP ESC passthrough.
 #undef USE_MULTI_GYRO
 #undef USE_RANGEFINDER_HCSR04
 #undef USE_VTX_RTC6705

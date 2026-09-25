@@ -82,6 +82,9 @@ __attribute__((always_inline)) static inline void __set_BASEPRI_MAX_nb(uint32_t 
 
 typedef enum {DISABLE = 0, ENABLE = !DISABLE} FunctionalState;
 
+// Compatibility value used by platform-neutral GPIO bit-bang drivers.
+#define GPIO_PIN_RESET 0
+
 #define I2C_INST(i2c)        ((i2c_inst_t *)(i2c))
 
 #define DMA_TypeDef          void*

@@ -43,3 +43,10 @@ mode and stays on while valid receiver packets are arriving.
 This build uses the ExpressLRS v3 over-the-air format by default. The radio
 transmitter module must use the same major OTA version and a 2.4 GHz regulatory
 domain compatible with `expresslrs_domain` (`ISM2400` by default).
+
+## ESC passthrough
+
+Motor outputs use RP2040 GPIO12 through GPIO15 (`PA12` through `PA15` in
+Betaflight resource notation). Serial 4-way MSP passthrough is enabled for
+BLHeli and AM32 tools. During passthrough, the motor pins are temporarily moved
+from PIO DShot to software-controlled GPIO and are restored when it exits.

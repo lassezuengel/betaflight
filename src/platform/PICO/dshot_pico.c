@@ -252,15 +252,43 @@ static void dshotUpdateComplete(void)
 static bool dshotEnableMotors(void)
 {
     bprintf("pico dshotEnableMotors (useDshotTelemetry = %d)", useDshotTelemetry);
-    // No special processing required
+
+    // Serial 4-way changes motor pins to SIO.  Restore their PIO mux and put
+    // every state machine back at the beginning of a clean frame before motor
+    // output resumes.
+    for (int motorIndex = 0; motorIndex < dshotMotorCount; ++motorIndex) {
+        const motorOutput_t *motor = &dshotMotors[motorIndex];
+        if (!motor->configured) {
+            continue;
+        }
+
+        pio_sm_set_enabled(motor->pio, motor->pio_sm, false);
+        pio_sm_clear_fifos(motor->pio, motor->pio_sm);
+        pio_sm_restart(motor->pio, motor->pio_sm);
+        pio_gpio_init(motor->pio, motor->pinIndex);
+        pio_sm_set_consecutive_pindirs(motor->pio, motor->pio_sm, motor->pinIndex, 1, true);
+        gpio_set_pulls(motor->pinIndex, useDshotTelemetry, !useDshotTelemetry);
+        pio_sm_exec(motor->pio, motor->pio_sm,
+            pio_encode_set(pio_pins, useDshotTelemetry ? 1 : 0));
+        if (useDshotTelemetry) {
+            // Restore the initial OSR state used by the bidirectional program.
+            pio_sm_exec(motor->pio, motor->pio_sm, 0xa0eb);
+        }
+        pio_sm_exec(motor->pio, motor->pio_sm, pio_encode_jmp(motor->offset));
+        pio_sm_set_enabled(motor->pio, motor->pio_sm, true);
+    }
+
     return true;
 }
 
 static void dshotDisableMotors(void)
 {
     bprintf("pico dshotDisableMotors");
-    // No special processing required
-    return;
+    for (int motorIndex = 0; motorIndex < dshotMotorCount; ++motorIndex) {
+        if (dshotMotors[motorIndex].configured) {
+            pio_sm_set_enabled(dshotMotors[motorIndex].pio, dshotMotors[motorIndex].pio_sm, false);
+        }
+    }
 }
 
 static void dshotShutdown(void)
@@ -288,6 +316,14 @@ static bool dshotIsMotorIdle(unsigned motorIndex)
         return false;
     }
     return dshotMotors[motorIndex].protocolControl.value == 0;
+}
+
+static IO_t dshotGetMotorIO(unsigned index)
+{
+    if (index >= (unsigned)dshotMotorCount || !dshotMotors[index].configured) {
+        return IO_NONE;
+    }
+    return dshotMotors[index].io;
 }
 
 static void dshotRequestTelemetry(unsigned index)
@@ -320,6 +356,7 @@ static motorVTable_t dshotVTable = {
     .shutdown = dshotShutdown,
     .isMotorIdle = dshotIsMotorIdle,
     .requestTelemetry = dshotRequestTelemetry,
+    .getMotorIO = dshotGetMotorIO,
 };
 
 bool dshotPwmDevInit(motorDevice_t *device, const motorDevConfig_t *motorConfig)
@@ -341,10 +378,11 @@ bool dshotPwmDevInit(motorDevice_t *device, const motorDevConfig_t *motorConfig)
     }
 
     dshotMotorProtocol = motorConfig->motorProtocol;
-    if (dshotMotorProtocol != MOTOR_PROTOCOL_DSHOT600) {
+    if (dshotMotorProtocol != MOTOR_PROTOCOL_DSHOT150 &&
+        dshotMotorProtocol != MOTOR_PROTOCOL_DSHOT300 &&
+        dshotMotorProtocol != MOTOR_PROTOCOL_DSHOT600) {
         bprintf("\n*** DSHOT motor protocol [%d] not currently supported", dshotMotorProtocol);
         return false;
-        // TODO support DSHOT300, DSHOT150
     }
 
 #ifdef USE_DSHOT_TELEMETRY
