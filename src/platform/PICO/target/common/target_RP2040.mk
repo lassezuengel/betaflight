@@ -1,0 +1,9 @@
+# The RP2040-FPV board uses a 16-Mbit Winbond W25Q16JV QSPI flash.
+MCU_FLASH_SIZE = 2048
+
+PICO_FLASH_DEFINES ?= \
+                   -DPICO_FLASH_SPI_CLKDIV=2 \
+                   -DPICO_FLASH_SIZE_BYTES=2097152 \
+                   -DPICO_BOOT_STAGE2_CHOOSE_W25Q080=1
+
+DEVICE_FLAGS += $(PICO_FLASH_DEFINES)

@@ -11,9 +11,14 @@ DEFAULT_OUTPUT := uf2
 PLATFORM_SDK := pico_sdk
 PLATFORM_SDK_STAMP := $(PICO_SDK_STAMP)
 
-# Run from SRAM. To disable, set environment variable RUN_FROM_RAM=0
+# RP2350 can use the hybrid RAM layout.  RP2040 has only 264 KiB total SRAM,
+# so its safe default is XIP with explicitly annotated fast code copied to RAM.
 ifeq ($(RUN_FROM_RAM),)
+ifeq ($(TARGET_MCU),RP2040)
+RUN_FROM_RAM = 0
+else
 RUN_FROM_RAM = 1
+endif
 endif
 
 PICO_LIB_OPTIMISATION      := -O2 -fuse-linker-plugin -ffast-math -fmerge-all-constants
@@ -41,6 +46,12 @@ RP2350_TARGETS = RP2350A RP2350B
 ifneq ($(filter $(TARGET_MCU), $(RP2350_TARGETS)),)
 RP2350_TARGET = $(TARGET_MCU)
 endif
+
+ifeq ($(TARGET_MCU),RP2040)
+RP2040_TARGET = RP2040
+endif
+
+RP2_TARGET = $(RP2350_TARGET)$(RP2040_TARGET)
 
 ifeq ($(DEBUG_HARDFAULTS),PICO)
 CFLAGS          += -DDEBUG_HARDFAULTS
@@ -91,7 +102,6 @@ PICO_LIB_SRC = \
             common/pico_util/datetime.c \
             common/pico_util/pheap.c \
             common/pico_util/queue.c \
-            rp2350/pico_platform/platform.c \
             rp2_common/pico_atomic/atomic.c \
             rp2_common/pico_bootrom/bootrom.c \
             rp2_common/pico_bootrom/bootrom_lock.c \
@@ -130,12 +140,20 @@ TINYUSB_SRC += \
             $(TINY_USB_SRC_DIR)/class/usbtmc/usbtmc_device.c \
             $(TINY_USB_SRC_DIR)/class/audio/audio_device.c
 
-# pico_float
-PICO_LIB_SRC  += \
+# pico_float / pico_double implementations are selected for the active core.
+ifdef RP2350_TARGET
+PICO_LIB_SRC += \
             rp2_common/pico_float/float_common_m33.S \
             rp2_common/pico_float/float_conv32_vfp.S \
             rp2_common/pico_float/float_math.c \
             rp2_common/pico_float/float_sci_m33_vfp.S
+else ifdef RP2040_TARGET
+PICO_LIB_SRC += \
+            rp2_common/pico_float/float_aeabi_rp2040.S \
+            rp2_common/pico_float/float_init_rom_rp2040.c \
+            rp2_common/pico_float/float_math.c \
+            rp2_common/pico_float/float_v1_rom_shim_rp2040.S
+endif
 
 PICO_FLOAT_WRAP_FNS = \
             __aeabi_f2lz \
@@ -180,15 +198,47 @@ PICO_FLOAT_WRAP_FNS = \
             tanhf \
             truncf
 
+ifdef RP2040_TARGET
+PICO_FLOAT_WRAP_FNS += \
+            __aeabi_fadd \
+            __aeabi_fdiv \
+            __aeabi_fmul \
+            __aeabi_frsub \
+            __aeabi_fsub \
+            __aeabi_cfcmpeq \
+            __aeabi_cfrcmple \
+            __aeabi_cfcmple \
+            __aeabi_fcmpeq \
+            __aeabi_fcmplt \
+            __aeabi_fcmple \
+            __aeabi_fcmpge \
+            __aeabi_fcmpgt \
+            __aeabi_fcmpun \
+            __aeabi_i2f \
+            __aeabi_ui2f \
+            __aeabi_f2iz \
+            __aeabi_f2uiz \
+            __aeabi_f2d \
+            sqrtf
+endif
+
 PICO_FLOAT_LD_FLAGS = $(foreach fn, $(PICO_FLOAT_WRAP_FNS), -Wl,--wrap=$(fn))
 
 # pico_double
+ifdef RP2350_TARGET
 PICO_LIB_SRC += \
             rp2_common/pico_double/double_aeabi_dcp.S \
             rp2_common/pico_double/double_conv_m33.S \
             rp2_common/pico_double/double_fma_dcp.S \
             rp2_common/pico_double/double_math.c \
             rp2_common/pico_double/double_sci_m33.S
+else ifdef RP2040_TARGET
+PICO_LIB_SRC += \
+            rp2_common/pico_double/double_aeabi_rp2040.S \
+            rp2_common/pico_double/double_init_rom_rp2040.c \
+            rp2_common/pico_double/double_math.c \
+            rp2_common/pico_double/double_v1_rom_shim_rp2040.S
+endif
 
 PICO_DOUBLE_WRAP_FNS = \
             __aeabi_cdcmpeq \
@@ -260,6 +310,11 @@ VPATH := $(VPATH):$(STDPERIPH_DIR)
 ifdef RP2350_TARGET
 TARGET_MCU_LIB_LOWER = rp2350
 TARGET_MCU_LIB_UPPER = RP2350
+PICO_LIB_SRC += rp2350/pico_platform/platform.c
+else ifdef RP2040_TARGET
+TARGET_MCU_LIB_LOWER = rp2040
+TARGET_MCU_LIB_UPPER = RP2040
+PICO_LIB_SRC += rp2040/pico_platform/platform.c
 endif
 
 #CMSIS
@@ -373,10 +428,14 @@ SYS_INCLUDE_DIRS = \
             $(LIB_MODULES_DIR)/pico-sdk/lib/tinyusb/src
 
 SYS_INCLUDE_DIRS += \
-            $(SDK_DIR)/rp2350/boot_stage2/include
+            $(SDK_DIR)/$(TARGET_MCU_LIB_LOWER)/boot_stage2/include
 
 #Flags
+ifdef RP2350_TARGET
 ARCH_FLAGS      = -mthumb -mcpu=cortex-m33 -march=armv8-m.main+fp+dsp -mcmse -mfloat-abi=softfp
+else ifdef RP2040_TARGET
+ARCH_FLAGS      = -mthumb -mcpu=cortex-m0plus -march=armv6-m -mfloat-abi=soft -DPICO_RP2040=1
+endif
 ARCH_FLAGS      += -DPICO_COPY_TO_RAM=$(RUN_FROM_RAM)
 
 # Work around memcpy alignment issue: compiler to generate function calls
@@ -425,13 +484,12 @@ PICO_MEM_LD_FLAGS = $(foreach fn, $(PICO_MEM_WRAP_FNS), -Wl,--wrap=$(fn))
 
 EXTRA_LD_FLAGS += $(PICO_STDIO_LD_FLAGS) $(PICO_TRACE_LD_FLAGS) $(PICO_FLOAT_LD_FLAGS) $(PICO_DOUBLE_LD_FLAGS) $(PICO_BIT_OPS_LD_FLAGS) $(PICO_MEM_LD_FLAGS)
 
-ifdef RP2350_TARGET
+ifneq ($(strip $(RP2_TARGET)),)
 
 # Q. do we need LIB_BOOT_STAGE_2_HEADERS?
 # TODO review LIB_PICO options
 DEVICE_FLAGS    += \
-            -D$(RP2350_TARGET) \
-            -DPICO_RP2350_A2_SUPPORTED=1 \
+            -D$(RP2_TARGET) \
             -DLIB_BOOT_STAGE2_HEADERS=1 \
             -DLIB_PICO_ATOMIC=1 \
             -DLIB_PICO_BIT_OPS=1 \
@@ -445,7 +503,6 @@ DEVICE_FLAGS    += \
             -DLIB_PICO_DOUBLE_PICO=1 \
             -DLIB_PICO_FLOAT=1 \
             -DLIB_PICO_FLOAT_PICO=1 \
-            -DLIB_PICO_FLOAT_PICO_VFP=1 \
             -DLIB_PICO_INT64_OPS=1 \
             -DLIB_PICO_INT64_OPS_COMPILER=1 \
             -DLIB_PICO_MALLOC=1 \
@@ -478,9 +535,21 @@ DEVICE_FLAGS    += \
             -DPICO_NO_FLASH=0 \
             -DPICO_NO_HARDWARE=0 \
             -DPICO_ON_DEVICE=1 \
-            -DPICO_RP2350=1 \
-            -DPICO_USE_BLOCKED_RAM=0 \
-            -DPICO_CORE1_STACK_SIZE=0x1000
+            -DPICO_USE_BLOCKED_RAM=0
+
+ifdef RP2350_TARGET
+DEVICE_FLAGS += \
+            -DPICO_CORE1_STACK_SIZE=0x1000 \
+            -DPICO_RP2350_A2_SUPPORTED=1 \
+            -DLIB_PICO_FLOAT_PICO_VFP=1 \
+            -DPICO_RP2350=1
+else ifdef RP2040_TARGET
+DEVICE_FLAGS += \
+            -DPICO_CORE1_STACK_SIZE=0 \
+            -DPICO_RP2040=1
+PICO_LIB_SRC := $(filter-out rp2_common/pico_multicore/multicore.c,$(PICO_LIB_SRC))
+PICO_LIB_SRC += PICO/boot2_w25q080_padded.S
+endif
 
 
 # LD_SCRIPT must be set to the first included linker script.
@@ -503,7 +572,11 @@ ifeq ($(RUN_FROM_RAM),1)
 # RunFromHybrid -> load most code / data into RAM, with some exclusions (cli, pg, ...)
 EXTRA_LD_FLAGS  += -T$(LINKER_DIR)/pico_rp2350_RunFromHybrid.ld
 else
+ifdef RP2350_TARGET
 EXTRA_LD_FLAGS  += -T$(LINKER_DIR)/pico_rp2350_RunFromFLASH.ld
+else ifdef RP2040_TARGET
+EXTRA_LD_FLAGS  += -T$(LINKER_DIR)/pico_rp2040_RunFromFLASH.ld
+endif
 endif
 
 # Override the OPTIMISE_SPEED compiler setting to save flash space on these 512KB targets.
@@ -540,7 +613,7 @@ PICO_LIB_SRC += $(PICO_STDIO_USB_SRC)
 SYS_INCLUDE_DIRS += \
             $(SDK_DIR)/rp2_common/pico_fix/rp2040_usb_device_enumeration/include
 
-# TODO use system_RP2350.c instead of writing into PICO/system.c
+# TODO use the SDK CMSIS system source instead of writing into PICO/system.c
 # MCU_COMMON_SRC += \
 #             system_RP2350.c
 
@@ -573,6 +646,7 @@ MCU_COMMON_SRC = \
             PICO/dshot_bidir_pico.c \
             PICO/dshot_pico.c \
             PICO/exti_pico.c \
+            PICO/expresslrs_driver_pico.c \
             PICO/io_pico.c \
             PICO/osd/font_betaflight.c \
             PICO/osd/fb_osd_pico.c \

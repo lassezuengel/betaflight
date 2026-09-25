@@ -84,6 +84,7 @@ static const uint8_t cdc_only_configuration[] = {
 };
 
 // MSC-only configuration (used when MSC mode is active)
+#if CFG_TUD_MSC
 enum {
   ITF_MSC_ONLY = 0,
   ITF_MSC_ONLY_TOTAL
@@ -95,11 +96,16 @@ static const uint8_t msc_only_configuration[] = {
   TUD_CONFIG_DESCRIPTOR(1, ITF_MSC_ONLY_TOTAL, 0, MSC_ONLY_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 250),
   TUD_MSC_DESCRIPTOR(ITF_MSC_ONLY, 5, 0x01, 0x81, 64),
 };
+#endif
 
 const uint8_t * tud_descriptor_configuration_cb(uint8_t index)
 {
   (void) index; // single config
+#if CFG_TUD_MSC
   return pico_msc_active ? msc_only_configuration : cdc_only_configuration;
+#else
+  return cdc_only_configuration;
+#endif
 }
 
 // String descriptors
@@ -134,5 +140,4 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
   _desc_str[0] = (TUSB_DESC_STRING << 8) | (2*chr_count + 2);
   return _desc_str;
 }
-
 

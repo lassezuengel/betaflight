@@ -21,8 +21,12 @@
 
 #pragma once
 
-// pico sdk header includes
+// pico-sdk CMSIS device header
+#if defined(RP2040)
+#include "RP2040.h"
+#else
 #include "RP2350.h"
+#endif
 #include "pico.h"
 #include "pico/stdlib.h"
 #include "hardware/dma.h"
@@ -37,11 +41,44 @@
 #undef MAX
 #undef MIN
 
+#ifdef RP2040
+// Cortex-M0+ has PRIMASK but no BASEPRI.  Betaflight's atomic blocks therefore
+// become short all-IRQ critical sections on RP2040.  The cleanup path restores
+// the exact previous PRIMASK state, so nesting remains safe.
+#define PLATFORM_CUSTOM_BASEPRI_NB
+__attribute__((always_inline)) static inline uint32_t __get_BASEPRI(void)
+{
+    return __get_PRIMASK();
+}
+
+__attribute__((always_inline)) static inline void __set_BASEPRI(uint32_t value)
+{
+    __set_PRIMASK(value ? 1u : 0u);
+}
+
+__attribute__((always_inline)) static inline void __set_BASEPRI_MAX(uint32_t value)
+{
+    if (value) {
+        __disable_irq();
+    }
+}
+
+__attribute__((always_inline)) static inline void __set_BASEPRI_nb(uint32_t value)
+{
+    __set_BASEPRI(value);
+}
+
+__attribute__((always_inline)) static inline void __set_BASEPRI_MAX_nb(uint32_t value)
+{
+    __set_BASEPRI_MAX(value);
+}
+#endif
+
 #define NVIC_PriorityGroup_2         0x500
 #define PLATFORM_NO_LIBC             0
 #define DEFIO_PORT_PINS              64
 
-#ifdef RP2350
+#if defined(RP2040) || defined(RP2350)
 
 typedef enum {DISABLE = 0, ENABLE = !DISABLE} FunctionalState;
 
@@ -80,8 +117,10 @@ struct quadSpiResource_s
 
 #if PICO_COPY_TO_RAM == 0
 #define FAST_CODE                       __attribute__((section(".fastcode")))
+#define FAST_CODE_NOINLINE              __attribute__((section(".fastcode"), noinline))
 #else
 #define FAST_CODE
+#define FAST_CODE_NOINLINE              __attribute__((noinline))
 #endif
 
 #define FAST_IRQ_HANDLER                FAST_CODE
@@ -93,6 +132,9 @@ struct quadSpiResource_s
 // (testing) allow time for more / all tasks
 // 1000 // 50000 // 125 // 125us = 8kHz
 #define TASK_GYROPID_DESIRED_PERIOD     30000
+#elif defined(RP2040)
+// Conservative 1.6 kHz initial loop target for the 125 MHz Cortex-M0+.
+#define TASK_GYROPID_DESIRED_PERIOD     625
 #else
 // 125us = 8kHz
 #define TASK_GYROPID_DESIRED_PERIOD     125
@@ -107,13 +149,12 @@ struct quadSpiResource_s
 // speed will either GPIO_SLEW_RATE_SLOW or GPIO_SLEW_RATE_FAST
 #define IO_CONFIG(mode, speed, pupd) ((mode) | ((speed) << 2) | ((pupd) << 5))
 
-// TODO update these and IOConfigGPIO
 #define IOCFG_OUT_PP          IO_CONFIG(GPIO_OUT, 0, 0)
 #define IOCFG_OUT_OD          IO_CONFIG(GPIO_OUT, 0, 0)
 #define IOCFG_AF_PP           0
 #define IOCFG_AF_OD           0
-#define IOCFG_IPD             IO_CONFIG(GPIO_IN, 0, 0)
-#define IOCFG_IPU             IO_CONFIG(GPIO_IN, 0, 0)
+#define IOCFG_IPD             IO_CONFIG(GPIO_IN, 0, GPIO_PULLDOWN)
+#define IOCFG_IPU             IO_CONFIG(GPIO_IN, 0, GPIO_PULLUP)
 #define IOCFG_IN_FLOATING     IO_CONFIG(GPIO_IN, 0, 0)
 
 // TODO update these and IOConfigGPIO
@@ -157,9 +198,11 @@ extern uint32_t systemUniqueId[3];
 #define DEFAULT_VOLTAGE_METER_SCALE   100
 #endif
 
+#if !defined(RP2040)
 #define USE_RPM_FILTER
 #define USE_DYN_IDLE
 #define USE_DYN_NOTCH_FILTER
+#endif
 
 // NVIC priority utility macros
 #define NVIC_PRIORITY_GROUPING NVIC_PriorityGroup_2

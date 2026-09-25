@@ -37,6 +37,10 @@
 #define RX_EXPRESSLRS_SPI_BUSY_PIN NONE
 #endif
 
+#if !defined(DEFAULT_RX_EXPRESSLRS_RATE_INDEX)
+#define DEFAULT_RX_EXPRESSLRS_RATE_INDEX 0
+#endif
+
 PG_REGISTER_WITH_RESET_TEMPLATE(rxExpressLrsSpiConfig_t, rxExpressLrsSpiConfig, PG_RX_EXPRESSLRS_SPI_CONFIG, 0);
 
 PG_RESET_TEMPLATE(rxExpressLrsSpiConfig_t, rxExpressLrsSpiConfig,
@@ -44,7 +48,7 @@ PG_RESET_TEMPLATE(rxExpressLrsSpiConfig_t, rxExpressLrsSpiConfig,
     .busyIoTag = IO_TAG(RX_EXPRESSLRS_SPI_BUSY_PIN),
     .UID = {0, 0, 0, 0, 0, 0},
     .domain = 0,
-    .rateIndex = 0,
+    .rateIndex = DEFAULT_RX_EXPRESSLRS_RATE_INDEX,
     .modelId = 0xFF,
 );
 #endif

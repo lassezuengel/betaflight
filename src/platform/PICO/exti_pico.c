@@ -43,10 +43,9 @@ void EXTIConfig(IO_t io, extiCallbackRec_t *cb, int irqPriority, ioConfig_t conf
     uint32_t gpio = IO_Pin(io);
 
     UNUSED(irqPriority); // Just stick with default GPIO irq priority for now
-    UNUSED(config); // TODO consider pullup/pulldown etc. Needs fixing first in platform.h
 
-    // Ensure the GPIO is initialised and not being used for some other function
-    gpio_init(gpio);
+    // Configure the input mode and pulls requested by the peripheral driver.
+    IOConfigGPIO(io, config);
 
     extiChannelRec_t *rec = &extiChannelRecs[gpio];
     rec->handler = cb;
@@ -121,5 +120,6 @@ void EXTIDisable(IO_t io)
         return;
     }
 
-    gpio_set_irq_enabled(IO_Pin(io), 0, false);
+    const uint gpio = IO_Pin(io);
+    gpio_set_irq_enabled(gpio, extiEventMask[gpio], false);
 }

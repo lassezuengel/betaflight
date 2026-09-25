@@ -29,7 +29,11 @@
 
 // Enable Mass Storage Class for TinyUSB on PICO platform
 #ifndef CFG_TUD_MSC
+#ifdef RP2040
+#define CFG_TUD_MSC             0
+#else
 #define CFG_TUD_MSC             1
+#endif
 #endif
 // Reasonable defaults; TinyUSB will fall back if unspecified
 #ifndef CFG_TUD_MSC_MAXLUN

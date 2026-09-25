@@ -24,7 +24,7 @@
 // DEFIO_PORT_<port>_USED_MASK is bitmask of used pins on target
 // DEFIO_PORT_<port>_USED_COUNT is count of used pins on target
 
-#if defined(RP2350A)
+#if defined(RP2040) || defined(RP2350A)
 #define DEFIO_USED_COUNT 30
 #elif defined(RP2350B)
 #define DEFIO_USED_COUNT 48
@@ -208,7 +208,7 @@
 #endif
 
 // DEFIO_IO_USED_COUNT is number of io pins supported on target
-#if defined(RP2350A)
+#if defined(RP2040) || defined(RP2350A)
 #define DEFIO_IO_USED_COUNT DEFIO_USED_COUNT
 #elif defined(RP2350B)
 #define DEFIO_IO_USED_COUNT DEFIO_USED_COUNT

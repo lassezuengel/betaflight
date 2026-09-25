@@ -30,7 +30,7 @@
 #include <string.h>
 #include "platform.h"
 
-#ifdef USE_RX_EXPRESSLRS
+#if defined(USE_RX_EXPRESSLRS) && !defined(PICO)
 
 #include "build/debug.h"
 #include "build/debug_pin.h"

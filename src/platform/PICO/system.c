@@ -45,7 +45,7 @@
 ///////////////////////////////////////////////////
 
 // SystemInit and SystemCoreClock variables/functions,
-// as per pico-sdk rp2_common/cmsis/stub/CMSIS/Device/RP2350/Source/system_RP2350.c
+// as per the pico-sdk CMSIS device system source
 
 uint32_t SystemCoreClock; /* System Clock Frequency (Core Clock)*/
 
@@ -85,10 +85,22 @@ uint32_t systemUniqueId[3] = { 0 };
 static uint32_t usTicks = 0;
 static float usTicksInv = 0.0f;
 
-// These are defined in pico-sdk headers as volatile uint32_t types
+#ifdef RP2350
+// These are defined in pico-sdk headers as volatile uint32_t types.
 #define PICO_DWT_CTRL   m33_hw->dwt_ctrl
 #define PICO_DWT_CYCCNT m33_hw->dwt_cyccnt
 #define PICO_DEMCR      m33_hw->demcr
+#else
+// Cortex-M0+ has no DWT cycle counter.  Extend its 24-bit SysTick counter in
+// software; at 125 MHz this adds only about eight interrupts per second.
+#define RP2040_SYSTICK_PERIOD (1u << 24)
+static volatile uint32_t rp2040CycleBase;
+
+void isr_systick(void)
+{
+    rp2040CycleBase += RP2040_SYSTICK_PERIOD;
+}
+#endif
 
 void cycleCounterInit(void)
 {
@@ -96,12 +108,27 @@ void cycleCounterInit(void)
     usTicks = SystemCoreClock / 1000000;
     usTicksInv = 1e6f / SystemCoreClock;
 
+#ifdef RP2350
     // Global DWT enable
     PICO_DEMCR |= M33_DEMCR_TRCENA_BITS;
 
     // Reset and enable cycle counter
     PICO_DWT_CYCCNT = 0;
     PICO_DWT_CTRL |= M33_DWT_CTRL_CYCCNTENA_BITS;
+#else
+    rp2040CycleBase = 0;
+    SysTick->CTRL = 0;
+    SysTick->LOAD = RP2040_SYSTICK_PERIOD - 1;
+    SysTick->VAL = 0;
+    NVIC_SetPriority(SysTick_IRQn, 0);
+    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk;
+
+    // VAL reloads on the first processor-clock edge after enabling.  Waiting
+    // here prevents the public counter from appearing to jump backwards once.
+    while (SysTick->VAL == 0) {
+        __NOP();
+    }
+#endif
 }
 
 void systemInit(void)
@@ -168,7 +195,32 @@ void delay(uint32_t ms)
 
 uint32_t getCycleCounter(void)
 {
+#ifdef RP2350
     return PICO_DWT_CYCCNT;
+#else
+    uint32_t baseBefore;
+    uint32_t baseAfter;
+    uint32_t current;
+    uint32_t pendingBefore;
+    uint32_t pendingAfter;
+
+    // Make the read coherent with both a SysTick rollover and its ISR.  If the
+    // exception is pending (for example inside a critical section), account
+    // for the rollover that the ISR has not added yet.
+    do {
+        baseBefore = rp2040CycleBase;
+        pendingBefore = SCB->ICSR & SCB_ICSR_PENDSTSET_Msk;
+        current = SysTick->VAL;
+        pendingAfter = SCB->ICSR & SCB_ICSR_PENDSTSET_Msk;
+        baseAfter = rp2040CycleBase;
+    } while (baseBefore != baseAfter || pendingBefore != pendingAfter);
+
+    if (pendingAfter) {
+        baseBefore += RP2040_SYSTICK_PERIOD;
+    }
+
+    return baseBefore + (RP2040_SYSTICK_PERIOD - 1u - current);
+#endif
 }
 
 // Conversion routines copied from platform/common/stm32/system.c
@@ -254,4 +306,3 @@ void unusedPinsInit(void)
 {
     IOTraversePins(unusedPinInit);
 }
-

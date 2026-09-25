@@ -20,6 +20,9 @@
 
 #include "platform.h"
 
+// The descriptor selector exists even in CDC-only builds.
+bool pico_msc_active = false;
+
 #ifdef USE_USB_MSC
 
 #include <string.h>
@@ -131,8 +134,6 @@ extern USBD_STORAGE_cb_TypeDef USBD_MSC_EMFAT_fops;
 // Here we only ensure TinyUSB is up and register MSC callbacks via TinyUSB.
 
 // TinyUSB MSC callbacks - forward to existing USBD_STORAGE_fops for SD/FLASH
-
-bool pico_msc_active = false;
 
 // Selected storage backend (registered in mscStart)
 static USBD_STORAGE_cb_TypeDef *msc_storage = NULL;
@@ -327,5 +328,4 @@ void mscTask(void)
     tud_task();
 }
 #endif // USE_USB_MSC
-
 

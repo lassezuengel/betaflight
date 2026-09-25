@@ -37,6 +37,9 @@
 #include "drivers/system.h"
 #include "drivers/time.h"
 
+#ifdef USE_ACC
+#include "sensors/acceleration.h"
+#endif
 #include "sensors/gyro.h"
 
 // When ENABLE_BMI270_ALIGN_AS_ICM is set, rotate the BMI270 raw data by CW90 so it
@@ -121,7 +124,8 @@ typedef enum {
 typedef enum {
     BMI270_VAL_CMD_SOFTRESET = 0xB6,
     BMI270_VAL_CMD_FIFOFLUSH = 0xB0,
-    BMI270_VAL_PWR_CTRL = 0x0E,              // enable gyro, acc and temp sensors
+    BMI270_VAL_PWR_CTRL_GYR_TEMP = 0x0A,     // enable gyro and temp sensors
+    BMI270_VAL_PWR_CTRL_ACC_GYR_TEMP = 0x0E, // enable gyro, acc and temp sensors
     BMI270_VAL_PWR_CONF = 0x02,              // disable advanced power save, enable FIFO self-wake
     BMI270_VAL_ACC_CONF_ODR800 = 0x0B,       // set acc sample rate to 800hz
     BMI270_VAL_ACC_CONF_ODR1600 = 0x0C,      // set acc sample rate to 1600hz
@@ -225,9 +229,19 @@ static uint8_t getBmiOsrMode(void)
     }
 }
 
+static bool bmi270AccEnabled(void)
+{
+#ifdef USE_ACC
+    return accelerometerConfig()->acc_hardware != ACC_NONE;
+#else
+    return false;
+#endif
+}
+
 static void bmi270Config(gyroDev_t *gyro)
 {
     extDevice_t *dev = &gyro->dev;
+    const bool accEnabled = bmi270AccEnabled();
 
     // If running in hardware_lpf experimental mode then switch to FIFO-based,
     // 6.4KHz sampling, unfiltered data vs. the default 3.2KHz with hardware filtering
@@ -255,11 +269,11 @@ static void bmi270Config(gyroDev_t *gyro)
         bmi270RegisterWrite(dev, BMI270_REG_FIFO_WTM_1, BMI270_VAL_FIFO_WTM_1, 1);
     }
 
-    // Configure the accelerometer
-    bmi270RegisterWrite(dev, BMI270_REG_ACC_CONF, (BMI270_VAL_ACC_CONF_HP << 7) | (BMI270_VAL_ACC_CONF_BWP << 4) | BMI270_VAL_ACC_CONF_ODR800, 1);
-
-    // Configure the accelerometer full-scale range
-    bmi270RegisterWrite(dev, BMI270_REG_ACC_RANGE, BMI270_VAL_ACC_RANGE_16G, 1);
+    if (accEnabled) {
+        // Configure the accelerometer only when Betaflight will use it.
+        bmi270RegisterWrite(dev, BMI270_REG_ACC_CONF, (BMI270_VAL_ACC_CONF_HP << 7) | (BMI270_VAL_ACC_CONF_BWP << 4) | BMI270_VAL_ACC_CONF_ODR800, 1);
+        bmi270RegisterWrite(dev, BMI270_REG_ACC_RANGE, BMI270_VAL_ACC_RANGE_16G, 1);
+    }
 
     // Configure the gyro
     bmi270RegisterWrite(dev, BMI270_REG_GYRO_CONF, (BMI270_VAL_GYRO_CONF_FILTER_PERF << 7) | (BMI270_VAL_GYRO_CONF_NOISE_PERF << 6) | (getBmiOsrMode() << 4) | BMI270_VAL_GYRO_CONF_ODR3200, 1);
@@ -282,8 +296,11 @@ static void bmi270Config(gyroDev_t *gyro)
     // Configure the device for  performance mode
     bmi270RegisterWrite(dev, BMI270_REG_PWR_CONF, BMI270_VAL_PWR_CONF, 1);
 
-    // Enable the gyro, accelerometer and temperature sensor - disable aux interface
-    bmi270RegisterWrite(dev, BMI270_REG_PWR_CTRL, BMI270_VAL_PWR_CTRL, 1);
+    // Keep the gyro and temperature sensor enabled.  Power the accelerometer
+    // only when selected, so gyro-only configurations avoid unnecessary IMU
+    // work and accelerometer data-ready events.
+    bmi270RegisterWrite(dev, BMI270_REG_PWR_CTRL,
+        accEnabled ? BMI270_VAL_PWR_CTRL_ACC_GYR_TEMP : BMI270_VAL_PWR_CTRL_GYR_TEMP, 1);
 
     // Flush the FIFO
     if (fifoMode) {

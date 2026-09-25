@@ -74,7 +74,9 @@ static const struct pio_program ws2812_program = {
     .length = ARRAYLEN(ws2812_program_instructions),
     .origin = -1,
     .pio_version = WS2812_PIO_VERSION,
+#if PICO_PIO_VERSION > 0
     .used_gpio_ranges = 0x0
+#endif
 };
 
 static inline pio_sm_config ws2812_program_get_default_config(uint offset)
